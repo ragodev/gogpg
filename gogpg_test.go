@@ -39,13 +39,13 @@ func TestGeneral(t *testing.T) {
 	data, _ := ioutil.ReadFile("testing/hello.txt.asc")
 	decrypted, err := gs.Decrypt(data)
 	assert.Equal(t, nil, err)
-	assert.Equal(t, "Hello, world.\n", decrypted)
+	assert.Equal(t, "Hello, world.\n", string(decrypted))
 
-	encrypted, err := gs.Encrypt("Hello, world.\n")
+	encrypted, err := gs.Encrypt([]byte("Hello, world.\n"))
 	assert.Equal(t, nil, err)
-	decrypted, err = gs.Decrypt([]byte(encrypted))
+	decrypted, err = gs.Decrypt(encrypted)
 	assert.Equal(t, nil, err)
-	assert.Equal(t, "Hello, world.\n", decrypted)
+	assert.Equal(t, "Hello, world.\n", string(decrypted))
 }
 
 func TestBugs(t *testing.T) {

@@ -172,11 +172,11 @@ func (gs *GPGStore) Init(identity, passphrase string) error {
 	}
 
 	// Test the password
-	enc, err := gs.Encrypt("testing")
+	enc, err := gs.Encrypt([]byte("testing"))
 	if err != nil {
 		return err
 	}
-	_, err = gs.Decrypt([]byte(enc))
+	_, err = gs.Decrypt(enc)
 	if err != nil {
 		return IncorrectPassphrase{identity}
 	}
@@ -184,7 +184,7 @@ func (gs *GPGStore) Init(identity, passphrase string) error {
 }
 
 // Decrypt uses the supplied GPG parameters to decrypt armor-encoded GPG data.
-func (gs *GPGStore) Decrypt(data []byte) (decrypted string, err error) {
+func (gs *GPGStore) Decrypt(encrypted []byte) (decrypted []byte, err error) {
 	passphraseByte := []byte(gs.passphrase)
 	gs.privateEntity.PrivateKey.Decrypt(passphraseByte)
 	for _, subkey := range gs.privateEntity.Subkeys {
@@ -193,7 +193,7 @@ func (gs *GPGStore) Decrypt(data []byte) (decrypted string, err error) {
 			return
 		}
 	}
-	result, err := armor.Decode(bytes.NewBuffer(data))
+	result, err := armor.Decode(bytes.NewBuffer(encrypted))
 	if err != nil {
 		return
 	}
@@ -202,23 +202,19 @@ func (gs *GPGStore) Decrypt(data []byte) (decrypted string, err error) {
 	if err != nil {
 		return
 	}
-	bytes, err := ioutil.ReadAll(md.UnverifiedBody)
-	if err != nil {
-		return
-	}
-	decrypted = string(bytes)
+	decrypted, err = ioutil.ReadAll(md.UnverifiedBody)
 	return
 }
 
 // Encrypt takes a string and returns a string that is armor encoded using the supplied GPG credentials.
-func (gs *GPGStore) Encrypt(secretString string) (decrypted string, err error) {
+func (gs *GPGStore) Encrypt(unencrypted []byte) (encrypted []byte, err error) {
 	buf := new(bytes.Buffer)
 	msg, _ := armor.Encode(buf, "PGP MESSAGE", nil)
 	w, err := openpgp.Encrypt(msg, gs.publicKeyToUse, nil, nil, nil)
 	if err != nil {
 		return
 	}
-	_, err = w.Write([]byte(secretString))
+	_, err = w.Write(unencrypted)
 	if err != nil {
 		return
 	}
@@ -231,7 +227,6 @@ func (gs *GPGStore) Encrypt(secretString string) (decrypted string, err error) {
 		return
 	}
 
-	bytes, err := ioutil.ReadAll(buf)
-	decrypted = string(bytes)
+	encrypted, err = ioutil.ReadAll(buf)
 	return
 }
