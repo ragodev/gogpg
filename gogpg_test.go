@@ -10,12 +10,32 @@ import (
 const secring = `C:\cygwin64\home\Zack\.gnupg\secring.gpg`
 const pubring = `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`
 
-func BenchmarkDecrypt(b *testing.B) {
+func BenchmarkDecryptFile(b *testing.B) {
 	gs, _ := New(secring, pubring)
 	gs.Init("Testy McTestFace", "1234")
 	for n := 0; n < b.N; n++ {
-		data, _ := ioutil.ReadFile("test.txt.asc")
+		data, err := ioutil.ReadFile("testing/hello.txt.asc")
+		if err != nil {
+			panic(err)
+		}
 		gs.Decrypt(data)
+	}
+}
+
+func BenchmarkDecrypt(b *testing.B) {
+	gs, _ := New(secring, pubring)
+	gs.Init("Testy McTestFace", "1234")
+	enc, _ := gs.Encrypt([]byte("this is a test"))
+	for n := 0; n < b.N; n++ {
+		gs.Decrypt(enc)
+	}
+}
+
+func BenchmarkEncrypt(b *testing.B) {
+	gs, _ := New(secring, pubring)
+	gs.Init("Testy McTestFace", "1234")
+	for n := 0; n < b.N; n++ {
+		gs.Encrypt([]byte("this is a test"))
 	}
 }
 
