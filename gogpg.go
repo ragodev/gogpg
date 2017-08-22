@@ -1,15 +1,24 @@
-package main
+package gogpg
 
 import (
 	"bytes"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 )
+
+// basic functions
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
 
 // GPGStore is the basic store object.
 type GPGStore struct {
@@ -22,15 +31,46 @@ type GPGStore struct {
 	publicEntity      *openpgp.Entity
 	publicKeyToUse    []*openpgp.Entity
 	privateEntityList openpgp.EntityList
+	publicKeys        []string
+	privateKeys       []string
 }
 
+// NoSuchKeyError is thrown when supplied GPG key name not available in private and public keychains
+type NoSuchKeyError struct {
+	key string
+}
+
+func (err NoSuchKeyError) Error() string {
+	return "gogpg: no such key \"" + err.key + "\""
+}
+
+// IncorrectPassphrase is thrown when the supplied passphrase doesn't match for the key
+type IncorrectPassphrase struct {
+	key string
+}
+
+func (err IncorrectPassphrase) Error() string {
+	return "gogpg: incorrect passphrase for \"" + err.key + "\""
+}
+
+// New returns a new GPGStore that can then needs to be initialized with Init()
 func New(secretKeyring, publicKeyring string) (*GPGStore, error) {
 	gs := new(GPGStore)
 	gs.secretKeyring = secretKeyring
 	gs.publicKeyring = publicKeyring
+	var err error
+	gs.publicKeys, err = gs.ListPublicKeys()
+	if err != nil {
+		return gs, err
+	}
+	gs.privateKeys, err = gs.ListPrivateKeys()
+	if err != nil {
+		return gs, err
+	}
 	return gs, nil
 }
 
+// ListPrivateKeys returns a list of the names of keys available in the private key chain
 func (gs *GPGStore) ListPrivateKeys() ([]string, error) {
 	keyringFileBuffer, err := os.Open(gs.secretKeyring)
 	if err != nil {
@@ -50,6 +90,7 @@ func (gs *GPGStore) ListPrivateKeys() ([]string, error) {
 	return keys, nil
 }
 
+// ListPublicKeys returns a list of the names of keys available in the public key chain
 func (gs *GPGStore) ListPublicKeys() ([]string, error) {
 	keyringFileBuffer, err := os.Open(gs.publicKeyring)
 	if err != nil {
@@ -69,7 +110,10 @@ func (gs *GPGStore) ListPublicKeys() ([]string, error) {
 	return keys, nil
 }
 
-func (gs *GPGStore) Init(identity, passphrase string) (*GPGStore, error) {
+// Init uses the supplied identity and passphrase to determine the GPG parameters.
+// The identity must be in the secret and public keychain, and returns an error otherwise.
+// The passphrase is validated and returns an error if doesn't exist.
+func (gs *GPGStore) Init(identity, passphrase string) error {
 	gs.identity = identity
 	gs.passphrase = passphrase
 
@@ -77,91 +121,117 @@ func (gs *GPGStore) Init(identity, passphrase string) (*GPGStore, error) {
 	var entityList []*openpgp.Entity
 	keyringFileBuffer, err := os.Open(gs.secretKeyring)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer keyringFileBuffer.Close()
 	entityList, err = openpgp.ReadKeyRing(keyringFileBuffer)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	gs.privateKeyToUse = make([]*openpgp.Entity, 1)
+	foundKey := false
 	for _, key := range entityList {
 		for _, id := range key.Identities {
 			if strings.Split(strings.Split(id.Name, " <")[0], " (")[0] == identity {
 				gs.privateKeyToUse[0] = key
 				gs.privateEntity = key
+				foundKey = true
+				break
 			}
 		}
 	}
+	if !foundKey {
+		return NoSuchKeyError{identity}
+	}
 	gs.privateEntityList = entityList
-	keyringFileBuffer.Close()
 
 	// Open the public key file
 	keyringFileBuffer, err = os.Open(gs.publicKeyring)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer keyringFileBuffer.Close()
 	entityList, err = openpgp.ReadKeyRing(keyringFileBuffer)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	gs.publicKeyToUse = make([]*openpgp.Entity, 1)
+	foundKey = false
 	for _, key := range entityList {
 		for _, id := range key.Identities {
 			if strings.Split(strings.Split(id.Name, " <")[0], " (")[0] == identity {
 				gs.publicKeyToUse[0] = key
 				gs.publicEntity = key
+				foundKey = true
+				break
 			}
 		}
 	}
-	keyringFileBuffer.Close()
+	if !foundKey {
+		return NoSuchKeyError{identity}
+	}
 
-	return gs, nil
+	// Test the password
+	enc, err := gs.Encrypt("testing")
+	if err != nil {
+		return err
+	}
+	_, err = gs.Decrypt([]byte(enc))
+	if err != nil {
+		return IncorrectPassphrase{identity}
+	}
+	return nil
 }
 
-func (gs *GPGStore) Decrypt(data []byte) (string, error) {
+// Decrypt uses the supplied GPG parameters to decrypt armor-encoded GPG data.
+func (gs *GPGStore) Decrypt(data []byte) (decrypted string, err error) {
 	passphraseByte := []byte(gs.passphrase)
 	gs.privateEntity.PrivateKey.Decrypt(passphraseByte)
 	for _, subkey := range gs.privateEntity.Subkeys {
-		subkey.PrivateKey.Decrypt(passphraseByte)
+		err = subkey.PrivateKey.Decrypt(passphraseByte)
+		if err != nil {
+			return
+		}
 	}
-
 	result, err := armor.Decode(bytes.NewBuffer(data))
 	if err != nil {
-		log.Fatal(err)
+		return
 	}
 
 	md, err := openpgp.ReadMessage(result.Body, gs.privateEntityList, nil, nil)
 	if err != nil {
-		panic(err)
+		return
 	}
 	bytes, err := ioutil.ReadAll(md.UnverifiedBody)
 	if err != nil {
-		panic(err)
+		return
 	}
-	decStr := string(bytes)
-	return decStr, nil
+	decrypted = string(bytes)
+	return
 }
 
-func (gs *GPGStore) Encrypt(secretString string) (string, error) {
+// Encrypt takes a string and returns a string that is armor encoded using the supplied GPG credentials.
+func (gs *GPGStore) Encrypt(secretString string) (decrypted string, err error) {
 	buf := new(bytes.Buffer)
 	msg, _ := armor.Encode(buf, "PGP MESSAGE", nil)
 	w, err := openpgp.Encrypt(msg, gs.publicKeyToUse, nil, nil, nil)
 	if err != nil {
-		panic(err)
+		return
 	}
 	_, err = w.Write([]byte(secretString))
 	if err != nil {
-		panic(err)
+		return
 	}
 	err = w.Close()
 	if err != nil {
-		panic(err)
+		return
 	}
-	msg.Close()
+	err = msg.Close()
+	if err != nil {
+		return
+	}
 
 	bytes, err := ioutil.ReadAll(buf)
-	str := string(bytes)
-	return str, nil
+	decrypted = string(bytes)
+	return
 }

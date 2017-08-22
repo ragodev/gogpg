@@ -1,4 +1,4 @@
-package main
+package gogpg
 
 import (
 	"io/ioutil"
@@ -7,17 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
+const secring = `C:\cygwin64\home\Zack\.gnupg\secring.gpg`
+const pubring = `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`
 
 func BenchmarkDecrypt(b *testing.B) {
-	gs, _ := New(`C:\cygwin64\home\Zack\.gnupg\secring.gpg`, `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`)
+	gs, _ := New(secring, pubring)
 	gs.Init("Testy McTestFace", "1234")
 	for n := 0; n < b.N; n++ {
 		data, _ := ioutil.ReadFile("test.txt.asc")
@@ -26,7 +20,8 @@ func BenchmarkDecrypt(b *testing.B) {
 }
 
 func TestListing(t *testing.T) {
-	gs, _ := New(`C:\cygwin64\home\Zack\.gnupg\secring.gpg`, `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`)
+	gs, err := New(secring, pubring)
+	assert.Equal(t, nil, err)
 	keys, err := gs.ListPrivateKeys()
 	assert.Equal(t, true, stringInSlice("Testy McTestFace", keys))
 	assert.Equal(t, nil, err)
@@ -37,9 +32,10 @@ func TestListing(t *testing.T) {
 }
 
 func TestGeneral(t *testing.T) {
-	gs, err := New(`C:\cygwin64\home\Zack\.gnupg\secring.gpg`, `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`)
+	gs, err := New(secring, pubring)
 	assert.Equal(t, nil, err)
-	gs.Init("Testy McTestFace", "1234")
+	err = gs.Init("Testy McTestFace", "1234")
+	assert.Equal(t, nil, err)
 	data, _ := ioutil.ReadFile("testing/hello.txt.asc")
 	decrypted, err := gs.Decrypt(data)
 	assert.Equal(t, nil, err)
@@ -50,4 +46,13 @@ func TestGeneral(t *testing.T) {
 	decrypted, err = gs.Decrypt([]byte(encrypted))
 	assert.Equal(t, nil, err)
 	assert.Equal(t, "Hello, world.\n", decrypted)
+}
+
+func TestBugs(t *testing.T) {
+	gs, err := New(secring, pubring)
+	assert.Equal(t, nil, err)
+	err = gs.Init("Testy Blah", "1234")
+	assert.Equal(t, NoSuchKeyError(NoSuchKeyError{key: "Testy Blah"}), err)
+	err = gs.Init("Testy McTestFace", "12354")
+	assert.Equal(t, IncorrectPassphrase(IncorrectPassphrase{key: "Testy McTestFace"}), err)
 }
