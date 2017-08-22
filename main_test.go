@@ -16,12 +16,6 @@ func stringInSlice(a string, list []string) bool {
 	return false
 }
 
-func BenchmarkDecryptFile(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		gpgDecryptFile("test.txt.asc", `C:\cygwin64\home\Zack\.gnupg\secring.gpg`, "Testy McTestFace", "1234")
-	}
-}
-
 func BenchmarkDecrypt(b *testing.B) {
 	gs, _ := New(`C:\cygwin64\home\Zack\.gnupg\secring.gpg`, `C:\cygwin64\home\Zack\.gnupg\pubring.gpg`)
 	gs.Init("Testy McTestFace", "1234")
