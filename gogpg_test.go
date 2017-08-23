@@ -7,15 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const secring = `C:\Users\Zack\AppData\Roaming\gnupg\secring.gpg`
-
-//`/home/zns/.gnupg/secring.gpg` //`C:\cygwin64\home\Zack\.gnupg\secring.gpg`
-const pubring = `C:\Users\Zack\AppData\Roaming\gnupg\pubring.gpg`
-
-// `/home/zns/.gnupg/pubring.gpg` //`C:\cygwin64\home\Zack\.gnupg\pubring.gpg`
-
 func BenchmarkDecryptFile(b *testing.B) {
-	gs, _ := New(secring, pubring)
+	gs, _ := New(false)
 	gs.Init("Testy McTestFace", "1234")
 	for n := 0; n < b.N; n++ {
 		data, err := ioutil.ReadFile("testing/hello.txt.asc")
@@ -27,7 +20,7 @@ func BenchmarkDecryptFile(b *testing.B) {
 }
 
 func BenchmarkDecrypt(b *testing.B) {
-	gs, _ := New(secring, pubring)
+	gs, _ := New(false)
 	gs.Init("Testy McTestFace", "1234")
 	enc, _ := gs.Encrypt([]byte("this is a test"))
 	for n := 0; n < b.N; n++ {
@@ -36,7 +29,7 @@ func BenchmarkDecrypt(b *testing.B) {
 }
 
 func BenchmarkEncrypt(b *testing.B) {
-	gs, _ := New(secring, pubring)
+	gs, _ := New(false)
 	gs.Init("Testy McTestFace", "1234")
 	for n := 0; n < b.N; n++ {
 		gs.Encrypt([]byte("this is a test"))
@@ -44,7 +37,8 @@ func BenchmarkEncrypt(b *testing.B) {
 }
 
 func TestListing(t *testing.T) {
-	gs, err := New(secring, pubring)
+	gs, err := New(true)
+	gs.Debug(true)
 	assert.Equal(t, nil, err)
 	keys, err := gs.ListPrivateKeys()
 	assert.Equal(t, true, stringInSlice("Testy McTestFace", keys))
@@ -56,7 +50,7 @@ func TestListing(t *testing.T) {
 }
 
 func TestGeneral(t *testing.T) {
-	gs, err := New(secring, pubring)
+	gs, err := New(true)
 	assert.Equal(t, nil, err)
 	err = gs.Init("Testy McTestFace", "1234")
 	assert.Equal(t, nil, err)
@@ -73,7 +67,7 @@ func TestGeneral(t *testing.T) {
 }
 
 func TestBugs(t *testing.T) {
-	gs, err := New(secring, pubring)
+	gs, err := New(true)
 	assert.Equal(t, nil, err)
 	err = gs.Init("Testy Blah", "1234")
 	assert.Equal(t, NoSuchKeyError(NoSuchKeyError{key: "Testy Blah"}), err)

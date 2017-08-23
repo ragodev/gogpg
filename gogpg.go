@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
+
+	homedir "github.com/mitchellh/go-homedir"
+	"github.com/sirupsen/logrus"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -33,6 +37,7 @@ type GPGStore struct {
 	privateEntityList openpgp.EntityList
 	publicKeys        []string
 	privateKeys       []string
+	log               *logrus.Logger
 }
 
 // NoSuchKeyError is thrown when supplied GPG key name not available in private and public keychains
@@ -44,6 +49,15 @@ func (err NoSuchKeyError) Error() string {
 	return "gogpg: no such key \"" + err.key + "\""
 }
 
+// NoSuchKeyRing is thrown when supplied keyring containing the secret and public keys cannot be found
+type NoSuchKeyRingError struct {
+	key string
+}
+
+func (err NoSuchKeyRingError) Error() string {
+	return "gogpg: no such key ring \"" + err.key + "\""
+}
+
 // IncorrectPassphrase is thrown when the supplied passphrase doesn't match for the key
 type IncorrectPassphrase struct {
 	key string
@@ -53,11 +67,44 @@ func (err IncorrectPassphrase) Error() string {
 	return "gogpg: incorrect passphrase for \"" + err.key + "\""
 }
 
-// New returns a new GPGStore that can then needs to be initialized with Init()
-func New(secretKeyring, publicKeyring string) (*GPGStore, error) {
+// New returns a new GPGStore.
+// You can specify the verbosity (which uses logrus) and you can optionally specify a keyring folder to use to find secring.gpg and pubring.gpg. If the keyring folder is not supplied, or not found, it will search in the common places to find the correct folder and use that.
+func New(debug bool, keyring ...string) (*GPGStore, error) {
 	gs := new(GPGStore)
-	gs.secretKeyring = secretKeyring
-	gs.publicKeyring = publicKeyring
+	gs.log = logrus.New()
+	gs.Debug(debug)
+
+	// check for valid key ring folder
+	validKeyringFolder := ""
+	if len(keyring) > 0 {
+		if exists(keyring[0]) {
+			validKeyringFolder = keyring[0]
+		}
+	}
+	// still not found
+	for {
+		if validKeyringFolder != "" {
+			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
+			break
+		}
+		homeDir, err := homedir.Dir()
+		if err != nil {
+			return nil, err
+		}
+		validKeyringFolder = path.Join(homeDir, ".gnupg")
+		if exists(validKeyringFolder) {
+			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
+			break
+		}
+		validKeyringFolder = path.Join(homeDir, "AppData/Roaming/gnupg")
+		if exists(validKeyringFolder) {
+			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
+			break
+		}
+		return gs, NoSuchKeyRingError{validKeyringFolder}
+	}
+	gs.secretKeyring = path.Join(validKeyringFolder, "secring.gpg")
+	gs.publicKeyring = path.Join(validKeyringFolder, "pubring.gpg")
 	var err error
 	gs.publicKeys, err = gs.ListPublicKeys()
 	if err != nil {
@@ -68,6 +115,14 @@ func New(secretKeyring, publicKeyring string) (*GPGStore, error) {
 		return gs, err
 	}
 	return gs, nil
+}
+
+func (gs *GPGStore) Debug(on bool) {
+	if on {
+		gs.log.SetLevel(logrus.InfoLevel)
+	} else {
+		gs.log.SetLevel(logrus.WarnLevel)
+	}
 }
 
 // ListPrivateKeys returns a list of the names of keys available in the private key chain
@@ -113,7 +168,8 @@ func (gs *GPGStore) ListPublicKeys() ([]string, error) {
 // Init uses the supplied identity and passphrase to determine the GPG parameters.
 // The identity must be in the secret and public keychain, and returns an error otherwise.
 // The passphrase is validated and returns an error if doesn't exist.
-func (gs *GPGStore) Init(identity, passphrase string) error {
+func (gs *GPGStore) Init(identity string, passphrase string) error {
+
 	gs.identity = identity
 	gs.passphrase = passphrase
 
@@ -229,4 +285,16 @@ func (gs *GPGStore) Encrypt(unencrypted []byte) (encrypted []byte, err error) {
 
 	encrypted, err = ioutil.ReadAll(buf)
 	return
+}
+
+// exists returns whether the given file or directory exists or not
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
 }
