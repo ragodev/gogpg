@@ -1,7 +1,6 @@
 package gogpg
 
 import (
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -86,7 +85,6 @@ func TestBulk(t *testing.T) {
 	for i := 0; i < len(filenames); i++ {
 		filenames[i] = "bulk/file" + strconv.Itoa(i) + ".asc"
 	}
-	fmt.Println(filenames)
 	if !exists("bulk") {
 		os.MkdirAll("bulk", 0700)
 	}
