@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 
+	pb "gopkg.in/cheggaaa/pb.v1"
+
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
 
@@ -301,7 +303,7 @@ func exists(path string) bool {
 }
 
 // BulkDecrypt takes a list of filenames and then decrypts them in parallel and then returns a map with filename keys and the decrypted file contents as values. Files which have errors are quietly skipped.
-func (gs *GPGStore) BulkDecrypt(filenames []string) (filecontents map[string]string, err error) {
+func (gs *GPGStore) BulkDecrypt(filenames []string, progress ...bool) (filecontents map[string]string, err error) {
 	gs.log.Debugf("Decrypting %d files", len(filenames))
 	filecontents = make(map[string]string)
 	jobs := make(chan string, len(filenames))
@@ -313,13 +315,27 @@ func (gs *GPGStore) BulkDecrypt(filenames []string) (filecontents map[string]str
 		jobs <- job
 	}
 	close(jobs)
+	showProgress := false
+	if len(progress) > 0 {
+		showProgress = progress[0]
+	}
+	var bar *pb.ProgressBar
+	if showProgress {
+		bar = pb.StartNew(len(filenames))
+	}
 	for i := 0; i < len(filenames); i++ {
+		if showProgress {
+			bar.Increment()
+		}
 		data := <-results
 		for key := range data {
 			if data[key] != "" {
 				filecontents[key] = data[key]
 			}
 		}
+	}
+	if showProgress {
+		bar.Finish()
 	}
 	gs.log.Debugf("Decrypted %d files", len(filecontents))
 	return
