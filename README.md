@@ -7,6 +7,17 @@
 
 See the tests and documentation for more info.
 
+## Development
+
+To run the tests, you need to generate a key for `Testy McTestFace`:
+
+```
+$ cd testing
+$ gpg --gen-key
+$ # Use ID "Testy McTestFace" and password "1234"
+$ gpg --yes --armor --recipient "Testy McTestFace" --trust-model always --encrypt hello.txt
+```
+
 ## License
 
 MIT
