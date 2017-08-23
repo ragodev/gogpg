@@ -300,7 +300,7 @@ func exists(path string) bool {
 	return true
 }
 
-// BulkDecrypt takes a list of filenames and then decrypts them in parallel and then returns a map with filename keys and the decrypted file contents as values.
+// BulkDecrypt takes a list of filenames and then decrypts them in parallel and then returns a map with filename keys and the decrypted file contents as values. Files which have errors are quietly skipped.
 func (gs *GPGStore) BulkDecrypt(filenames []string) (filecontents map[string]string, err error) {
 	gs.log.Debugf("Decrypting %d files", len(filenames))
 	filecontents = make(map[string]string)
