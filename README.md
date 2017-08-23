@@ -10,3 +10,9 @@ See the tests and documentation for more info.
 ## License
 
 MIT
+
+## To Do
+
+- [ ] Add logging
+- [ ] Automatically look for keyrings and use the first one found, otherwise throw error. Can override with specified key ring.
+- [ ] Only specify the folder where the keyrings are
