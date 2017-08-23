@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 
 	homedir "github.com/mitchellh/go-homedir"
@@ -119,7 +120,7 @@ func New(debug bool, keyring ...string) (*GPGStore, error) {
 
 func (gs *GPGStore) Debug(on bool) {
 	if on {
-		gs.log.SetLevel(logrus.InfoLevel)
+		gs.log.SetLevel(logrus.DebugLevel)
 	} else {
 		gs.log.SetLevel(logrus.WarnLevel)
 	}
@@ -297,4 +298,53 @@ func exists(path string) bool {
 		return false
 	}
 	return true
+}
+
+// BulkDecrypt takes a list of filenames and then decrypts them in parallel and then returns a map with filename keys and the decrypted file contents as values.
+func (gs *GPGStore) BulkDecrypt(filenames []string) (filecontents map[string]string, err error) {
+	gs.log.Debugf("Decrypting %d files", len(filenames))
+	filecontents = make(map[string]string)
+	jobs := make(chan string, len(filenames))
+	results := make(chan map[string]string, len(filenames))
+	for w := 1; w <= runtime.NumCPU(); w++ {
+		go gs.worker(w, jobs, results)
+	}
+	for _, job := range filenames {
+		jobs <- job
+	}
+	close(jobs)
+	for i := 0; i < len(filenames); i++ {
+		data := <-results
+		for key := range data {
+			if data[key] != "" {
+				filecontents[key] = data[key]
+			}
+		}
+	}
+	gs.log.Debugf("Decrypted %d files", len(filecontents))
+	return
+}
+func (gs *GPGStore) worker(id int, jobs <-chan string, results chan<- map[string]string) {
+	for f := range jobs {
+		result := make(map[string]string)
+		if !exists(f) {
+			gs.log.Debugf("Could not find %s", f)
+			results <- result
+			continue
+		}
+		data, err := ioutil.ReadFile(f)
+		if err != nil {
+			gs.log.Debugf("Could not read %s", f)
+			results <- result
+			continue
+		}
+		dec, err := gs.Decrypt(data)
+		if err != nil {
+			gs.log.Debugf("Could not decrypt %s", f)
+			results <- result
+			continue
+		}
+		result[f] = string(dec)
+		results <- result
+	}
 }

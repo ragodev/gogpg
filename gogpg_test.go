@@ -1,7 +1,11 @@
 package gogpg
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
+	"os"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,4 +77,41 @@ func TestBugs(t *testing.T) {
 	assert.Equal(t, NoSuchKeyError(NoSuchKeyError{key: "Testy Blah"}), err)
 	err = gs.Init("Testy McTestFace", "12354")
 	assert.Equal(t, IncorrectPassphrase(IncorrectPassphrase{key: "Testy McTestFace"}), err)
+}
+
+func TestBulk(t *testing.T) {
+	gs, _ := New(true)
+	gs.Init("Testy McTestFace", "1234")
+	filenames := make([]string, 1000)
+	for i := 0; i < len(filenames); i++ {
+		filenames[i] = "bulk/file" + strconv.Itoa(i) + ".asc"
+	}
+	fmt.Println(filenames)
+	if !exists("bulk") {
+		os.MkdirAll("bulk", 0700)
+	}
+	for _, filename := range filenames {
+		enc, err := gs.Encrypt([]byte(RandStringBytes(1000)))
+		if err != nil {
+			panic(err)
+		}
+		err = ioutil.WriteFile(filename, enc, 0644)
+		if err != nil {
+			panic(err)
+		}
+	}
+	data, err := gs.BulkDecrypt(filenames)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 1000, len(data))
+	os.RemoveAll("bulk")
+}
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func RandStringBytes(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return string(b)
 }
