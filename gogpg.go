@@ -40,7 +40,8 @@ type GPGStore struct {
 	privateEntityList openpgp.EntityList
 	publicKeys        []string
 	privateKeys       []string
-	log               *logrus.Logger
+	logger            *logrus.Logger
+	log               *logrus.Entry
 }
 
 // NoSuchKeyError is thrown when supplied GPG key name not available in private and public keychains
@@ -74,7 +75,10 @@ func (err IncorrectPassphrase) Error() string {
 // You can specify the verbosity (which uses logrus) and you can optionally specify a keyring folder to use to find secring.gpg and pubring.gpg. If the keyring folder is not supplied, or not found, it will search in the common places to find the correct folder and use that.
 func New(debug bool, keyring ...string) (*GPGStore, error) {
 	gs := new(GPGStore)
-	gs.log = logrus.New()
+	gs.logger = logrus.New()
+	gs.log = gs.logger.WithFields(logrus.Fields{
+		"source": "gogpg",
+	})
 	gs.Debug(debug)
 
 	// check for valid key ring folder
@@ -94,12 +98,22 @@ func New(debug bool, keyring ...string) (*GPGStore, error) {
 		if err != nil {
 			return nil, err
 		}
-		validKeyringFolder = path.Join(homeDir, ".gnupg")
+
+		s := strings.Split(homeDir, `\`)
+		s2 := s[len(s)-1]
+		s3 := strings.Split(s2, "/")
+		s4 := s3[len(s3)-1]
+		validKeyringFolder = `C:\cygwin64\home\` + s4 + `\.gnupg`
 		if exists(validKeyringFolder) {
 			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
 			break
 		}
 		validKeyringFolder = path.Join(homeDir, "AppData/Roaming/gnupg")
+		if exists(validKeyringFolder) {
+			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
+			break
+		}
+		validKeyringFolder = path.Join(homeDir, ".gnupg")
 		if exists(validKeyringFolder) {
 			gs.log.Infof("Using keyring '%s'", validKeyringFolder)
 			break
@@ -120,11 +134,15 @@ func New(debug bool, keyring ...string) (*GPGStore, error) {
 	return gs, nil
 }
 
+func (gs *GPGStore) Identity() string {
+	return gs.identity
+}
+
 func (gs *GPGStore) Debug(on bool) {
 	if on {
-		gs.log.SetLevel(logrus.DebugLevel)
+		gs.logger.SetLevel(logrus.DebugLevel)
 	} else {
-		gs.log.SetLevel(logrus.WarnLevel)
+		gs.logger.SetLevel(logrus.WarnLevel)
 	}
 }
 
@@ -142,7 +160,9 @@ func (gs *GPGStore) ListPrivateKeys() ([]string, error) {
 	keys := []string{}
 	for _, key := range entityList {
 		for _, id := range key.Identities {
-			keys = append(keys, strings.Split(strings.Split(id.Name, " <")[0], " (")[0])
+			idString := strings.Split(strings.Split(id.Name, " <")[0], " (")[0]
+			gs.log.Infof("Found id: '%s'", idString)
+			keys = append(keys, idString)
 		}
 	}
 	return keys, nil
