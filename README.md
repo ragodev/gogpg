@@ -15,7 +15,14 @@ To run the tests, you need to generate a key for `Testy McTestFace`:
 $ cd testing
 $ gpg --gen-key
 $ # Use ID "Testy McTestFace" and password "1234"
+$ cd testing
 $ gpg --yes --armor --recipient "Testy McTestFace" --trust-model always --encrypt hello.txt
+```
+
+Then you can run 
+
+```
+$ go test -v
 ```
 
 ## License
